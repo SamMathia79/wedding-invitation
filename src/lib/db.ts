@@ -2,6 +2,7 @@ import crypto from 'crypto';
 import fs from 'fs/promises';
 import path from 'path';
 import { neon } from '@neondatabase/serverless';
+import { del, list, put } from '@vercel/blob';
 import {
   DEFAULT_SETTINGS,
   Guest,
@@ -27,14 +28,20 @@ export function getStorageInfo(): StorageInfo {
   const isVercel = Boolean(process.env.VERCEL);
 
   return {
-    database: hasDb ? 'postgres' : isVercel ? 'ephemeral-tmp' : 'local-file',
+    database: hasDb
+      ? 'postgres'
+      : hasBlob
+        ? 'vercel-blob'
+        : isVercel
+          ? 'ephemeral-tmp'
+          : 'local-file',
     media: hasBlob ? 'vercel-blob' : isVercel ? 'url-only' : 'local-public',
     isVercel
   };
 }
 
 // ==========================================================
-// 1. POSTGRES / NEON ADAPTER (Production on Vercel)
+// 1. POSTGRES / NEON ADAPTER (When DATABASE_URL is connected)
 // ==========================================================
 let pgInitialized = false;
 
@@ -63,7 +70,8 @@ async function getSql() {
       )
     `;
 
-    const existingCount = await sql`SELECT COUNT(*)::int AS cnt FROM wedding_guests`;
+    const existingCount =
+      await sql`SELECT COUNT(*)::int AS cnt FROM wedding_guests`;
     if ((existingCount[0]?.cnt ?? 0) === 0) {
       for (const g of SAMPLE_GUESTS) {
         await sql`
@@ -80,11 +88,21 @@ async function getSql() {
 }
 
 // ==========================================================
-// 2. LOCAL JSON FILE ADAPTER (Zero-config Local Development)
+// 2. VERCEL BLOB CLOUD JSON ADAPTER + LOCAL DEV FALLBACK
 // ==========================================================
-interface LocalDbSchema {
+interface JsonDbSchema {
   settings: Partial<WeddingSettings>;
   guests: Guest[];
+}
+
+function getBlobStatePrefix(): string {
+  const token = process.env.BLOB_READ_WRITE_TOKEN || 'local';
+  const hash = crypto
+    .createHash('sha256')
+    .update(`samer-rafca-state-${token}`)
+    .digest('hex')
+    .slice(0, 24);
+  return `wedding-db-${hash}/state`;
 }
 
 function getLocalDbPath(): string {
@@ -94,26 +112,70 @@ function getLocalDbPath(): string {
   return path.join(process.cwd(), 'data', 'wedding-db.json');
 }
 
-async function readLocalDb(): Promise<LocalDbSchema> {
+async function readJsonDb(): Promise<JsonDbSchema> {
+  // Cloud persistence via Vercel Blob when BLOB_READ_WRITE_TOKEN is set
+  if (process.env.BLOB_READ_WRITE_TOKEN) {
+    const prefix = getBlobStatePrefix();
+    const { blobs } = await list({ prefix });
+    if (blobs.length > 0) {
+      const sorted = [...blobs].sort(
+        (a, b) =>
+          new Date(b.uploadedAt).getTime() - new Date(a.uploadedAt).getTime()
+      );
+      const res = await fetch(sorted[0].url, { cache: 'no-store' });
+      if (res.ok) {
+        const parsed = (await res.json()) as JsonDbSchema;
+        return {
+          settings: parsed.settings || {},
+          guests: Array.isArray(parsed.guests)
+            ? parsed.guests
+            : [...SAMPLE_GUESTS]
+        };
+      }
+    }
+    const initial: JsonDbSchema = {
+      settings: { ...DEFAULT_SETTINGS },
+      guests: [...SAMPLE_GUESTS]
+    };
+    await writeJsonDb(initial);
+    return initial;
+  }
+
+  // Local file persistence in development
   const dbPath = getLocalDbPath();
   try {
     const raw = await fs.readFile(dbPath, 'utf8');
-    const parsed = JSON.parse(raw) as LocalDbSchema;
+    const parsed = JSON.parse(raw) as JsonDbSchema;
     return {
       settings: parsed.settings || {},
       guests: Array.isArray(parsed.guests) ? parsed.guests : [...SAMPLE_GUESTS]
     };
   } catch {
-    const initial: LocalDbSchema = {
+    const initial: JsonDbSchema = {
       settings: { ...DEFAULT_SETTINGS },
       guests: [...SAMPLE_GUESTS]
     };
-    await writeLocalDb(initial);
+    await writeJsonDb(initial);
     return initial;
   }
 }
 
-async function writeLocalDb(data: LocalDbSchema): Promise<void> {
+async function writeJsonDb(data: JsonDbSchema): Promise<void> {
+  if (process.env.BLOB_READ_WRITE_TOKEN) {
+    const prefix = getBlobStatePrefix();
+    const { blobs: oldBlobs } = await list({ prefix });
+    await put(`${prefix}-${Date.now()}.json`, JSON.stringify(data, null, 2), {
+      access: 'public',
+      addRandomSuffix: true,
+      contentType: 'application/json',
+      cacheControlMaxAge: 0
+    });
+    if (oldBlobs.length > 0) {
+      await del(oldBlobs.map((b) => b.url)).catch(() => {});
+    }
+    return;
+  }
+
   const dbPath = getLocalDbPath();
   await fs.mkdir(path.dirname(dbPath), { recursive: true });
   await fs.writeFile(dbPath, JSON.stringify(data, null, 2), 'utf8');
@@ -142,7 +204,7 @@ export async function getSettings(): Promise<WeddingSettings> {
     return merged;
   }
 
-  const db = await readLocalDb();
+  const db = await readJsonDb();
   return {
     ...DEFAULT_SETTINGS,
     ...db.settings
@@ -172,13 +234,13 @@ export async function saveSettings(
     return getSettings();
   }
 
-  const db = await readLocalDb();
+  const db = await readJsonDb();
   db.settings = {
     ...DEFAULT_SETTINGS,
     ...db.settings,
     ...filtered
   };
-  await writeLocalDb(db);
+  await writeJsonDb(db);
   return { ...DEFAULT_SETTINGS, ...db.settings };
 }
 
@@ -202,7 +264,7 @@ export async function listGuests(): Promise<Guest[]> {
     }));
   }
 
-  const db = await readLocalDb();
+  const db = await readJsonDb();
   return db.guests;
 }
 
@@ -232,7 +294,7 @@ export async function getGuestByCode(code: string): Promise<Guest | null> {
     };
   }
 
-  const db = await readLocalDb();
+  const db = await readJsonDb();
   return (
     db.guests.find((g) => g.code.trim().toLowerCase() === clean.toLowerCase()) ||
     null
@@ -294,7 +356,7 @@ export async function upsertGuest(input: UpsertGuestInput): Promise<Guest> {
     return record;
   }
 
-  const db = await readLocalDb();
+  const db = await readJsonDb();
   const idx = db.guests.findIndex(
     (g) => g.code.trim().toLowerCase() === cleanCode.toLowerCase()
   );
@@ -303,7 +365,7 @@ export async function upsertGuest(input: UpsertGuestInput): Promise<Guest> {
   } else {
     db.guests.push(record);
   }
-  await writeLocalDb(db);
+  await writeJsonDb(db);
   return record;
 }
 
@@ -317,12 +379,12 @@ export async function deleteGuest(code: string): Promise<boolean> {
     return true;
   }
 
-  const db = await readLocalDb();
+  const db = await readJsonDb();
   const before = db.guests.length;
   db.guests = db.guests.filter(
     (g) => g.code.trim().toLowerCase() !== cleanCode.toLowerCase()
   );
-  await writeLocalDb(db);
+  await writeJsonDb(db);
   return db.guests.length < before;
 }
 
@@ -338,13 +400,18 @@ export async function submitRsvp(params: {
 > {
   const settings = await getSettings();
   const now = new Date();
-  const deadline = new Date(settings.rsvpDeadlineIso || DEFAULT_SETTINGS.rsvpDeadlineIso);
+  const deadline = new Date(
+    settings.rsvpDeadlineIso || DEFAULT_SETTINGS.rsvpDeadlineIso
+  );
   if (now > deadline) {
     return { ok: false, error: 'DEADLINE_PASSED' };
   }
 
-  const maxPlus = Math.max(1, Math.min(10, Number(settings.maxPlusGuests) || 4));
-  const globalMaxSeats = maxPlus + 1; // 1 (self) + up to +4 = 5 total seats
+  const maxPlus = Math.max(
+    1,
+    Math.min(10, Number(settings.maxPlusGuests) || 4)
+  );
+  const globalMaxSeats = maxPlus + 1;
 
   const cleanCode = String(params.code || '').trim();
   const existing = cleanCode ? await getGuestByCode(cleanCode) : null;
@@ -354,9 +421,11 @@ export async function submitRsvp(params: {
   const message = String(params.message || '').trim().slice(0, 500);
   const updatedAt = now.toISOString();
 
-  // Case 1: Personalized invite (?g=code) or returning open-link guest with saved code
   if (existing) {
-    const allowedMax = Math.max(existing.maxSeats || globalMaxSeats, globalMaxSeats);
+    const allowedMax = Math.max(
+      existing.maxSeats || globalMaxSeats,
+      globalMaxSeats
+    );
     const attendingSeats =
       status === 'Confirmed'
         ? Math.min(Math.max(1, Number(params.attendingSeats) || 1), allowedMax)
@@ -390,18 +459,17 @@ export async function submitRsvp(params: {
       return { ok: true, guest: updated };
     }
 
-    const db = await readLocalDb();
+    const db = await readJsonDb();
     const idx = db.guests.findIndex(
       (g) => g.code.trim().toLowerCase() === existing.code.toLowerCase()
     );
     if (idx >= 0) {
       db.guests[idx] = updated;
-      await writeLocalDb(db);
+      await writeJsonDb(db);
     }
     return { ok: true, guest: updated };
   }
 
-  // Case 2: Open WhatsApp link without ?g=code — create guest record from provided name
   const guestName = String(params.guestName || '').trim();
   if (!guestName) {
     return { ok: false, error: 'NAME_REQUIRED' };
@@ -410,7 +478,10 @@ export async function submitRsvp(params: {
   const newCode = `w-${crypto.randomBytes(3).toString('hex')}`;
   const attendingSeats =
     status === 'Confirmed'
-      ? Math.min(Math.max(1, Number(params.attendingSeats) || 1), globalMaxSeats)
+      ? Math.min(
+          Math.max(1, Number(params.attendingSeats) || 1),
+          globalMaxSeats
+        )
       : 0;
 
   const created: Guest = {
@@ -433,8 +504,8 @@ export async function submitRsvp(params: {
     return { ok: true, guest: created };
   }
 
-  const db = await readLocalDb();
+  const db = await readJsonDb();
   db.guests.unshift(created);
-  await writeLocalDb(db);
+  await writeJsonDb(db);
   return { ok: true, guest: created };
 }

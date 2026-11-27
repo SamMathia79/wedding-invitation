@@ -100,7 +100,7 @@ export interface WeddingSettings {
 }
 
 export interface StorageInfo {
-  database: 'postgres' | 'local-file' | 'ephemeral-tmp';
+  database: 'postgres' | 'vercel-blob' | 'local-file' | 'ephemeral-tmp';
   media: 'vercel-blob' | 'local-public' | 'url-only';
   isVercel: boolean;
 }

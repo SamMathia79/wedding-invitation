@@ -567,7 +567,8 @@ export default function AdminClient({
               <div className="storage-pills">
                 <span
                   className={`storage-pill ${
-                    storageInfo.database === 'postgres'
+                    storageInfo.database === 'postgres' ||
+                    storageInfo.database === 'vercel-blob'
                       ? 'cloud'
                       : storageInfo.database === 'ephemeral-tmp'
                         ? 'warn'
@@ -577,9 +578,11 @@ export default function AdminClient({
                   DB:{' '}
                   {storageInfo.database === 'postgres'
                     ? 'Vercel Postgres / Neon ✓'
-                    : storageInfo.database === 'local-file'
-                      ? 'Local File (Dev)'
-                      : 'Temp Memory (Connect DATABASE_URL on Vercel)'}
+                    : storageInfo.database === 'vercel-blob'
+                      ? 'Vercel Cloud Store ✓'
+                      : storageInfo.database === 'local-file'
+                        ? 'Local File (Dev)'
+                        : 'Temp Memory'}
                 </span>
                 <span
                   className={`storage-pill ${
