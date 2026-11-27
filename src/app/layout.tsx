@@ -1,102 +1,8 @@
 import type { Metadata } from 'next';
-import {
-  Amiri,
-  Aref_Ruqaa,
-  Blinker,
-  Cairo,
-  Cinzel,
-  Cormorant_Garamond,
-  Montserrat,
-  Noto_Naskh_Arabic,
-  Playfair_Display,
-  PT_Serif,
-  Sacramento
-} from 'next/font/google';
 import './globals.css';
 
-// Downloaded & self-hosted Google Fonts via next/font/google
-const sacramento = Sacramento({
-  subsets: ['latin'],
-  weight: ['400'],
-  variable: '--font-sacramento',
-  display: 'swap'
-});
-
-const ptSerif = PT_Serif({
-  subsets: ['latin'],
-  weight: ['400', '700'],
-  style: ['normal', 'italic'],
-  variable: '--font-ptserif',
-  display: 'swap'
-});
-
-const blinker = Blinker({
-  subsets: ['latin'],
-  weight: ['200', '300', '400', '600', '700'],
-  variable: '--font-blinker',
-  display: 'swap'
-});
-
-const montserrat = Montserrat({
-  subsets: ['latin'],
-  weight: ['200', '300', '400', '500', '600', '700'],
-  variable: '--font-montserrat',
-  display: 'swap'
-});
-
-// Additional CMS English Font Choices
-const cormorant = Cormorant_Garamond({
-  subsets: ['latin'],
-  weight: ['400', '600', '700'],
-  style: ['normal', 'italic'],
-  variable: '--font-cormorant',
-  display: 'swap'
-});
-
-const playfair = Playfair_Display({
-  subsets: ['latin'],
-  weight: ['400', '600', '700'],
-  style: ['normal', 'italic'],
-  variable: '--font-playfair',
-  display: 'swap'
-});
-
-const cinzel = Cinzel({
-  subsets: ['latin'],
-  weight: ['400', '600', '700'],
-  variable: '--font-cinzel',
-  display: 'swap'
-});
-
-// Arabic Fonts (CMS selectable)
-const amiri = Amiri({
-  subsets: ['arabic', 'latin'],
-  weight: ['400', '700'],
-  style: ['normal', 'italic'],
-  variable: '--font-amiri',
-  display: 'swap'
-});
-
-const notoNaskh = Noto_Naskh_Arabic({
-  subsets: ['arabic'],
-  weight: ['400', '600', '700'],
-  variable: '--font-notonaskh',
-  display: 'swap'
-});
-
-const arefRuqaa = Aref_Ruqaa({
-  subsets: ['arabic'],
-  weight: ['400', '700'],
-  variable: '--font-arefruqaa',
-  display: 'swap'
-});
-
-const cairo = Cairo({
-  subsets: ['arabic', 'latin'],
-  weight: ['300', '400', '600', '700'],
-  variable: '--font-cairo',
-  display: 'swap'
-});
+const GOOGLE_FONTS_HREF =
+  'https://fonts.googleapis.com/css2?family=Amiri:ital,wght@0,400;0,700;1,400;1,700&family=Aref+Ruqaa:wght@400;700&family=Blinker:wght@200;300;400;600;700&family=Cairo:wght@300;400;600;700&family=Cinzel:wght@400;600;700&family=Cormorant+Garamond:ital,wght@0,400;0,600;0,700;1,400;1,600;1,700&family=Montserrat:wght@200;300;400;500;600;700&family=Noto+Naskh+Arabic:wght@400;600;700&family=PT+Serif:ital,wght@0,400;0,700;1,400;1,700&family=Playfair+Display:ital,wght@0,400;0,600;0,700;1,400;1,600;1,700&family=Sacramento&display=swap';
 
 function getBaseUrl(): string {
   if (process.env.NEXT_PUBLIC_SITE_URL) {
@@ -123,22 +29,18 @@ export default function RootLayout({
 }: Readonly<{
   children: React.ReactNode;
 }>) {
-  const fontClasses = [
-    sacramento.variable,
-    ptSerif.variable,
-    blinker.variable,
-    montserrat.variable,
-    cormorant.variable,
-    playfair.variable,
-    cinzel.variable,
-    amiri.variable,
-    notoNaskh.variable,
-    arefRuqaa.variable,
-    cairo.variable
-  ].join(' ');
-
   return (
-    <html lang="en" className={fontClasses}>
+    <html lang="en">
+      <head>
+        <link rel="preconnect" href="https://fonts.googleapis.com" />
+        <link
+          rel="preconnect"
+          href="https://fonts.gstatic.com"
+          crossOrigin="anonymous"
+        />
+        {/* eslint-disable-next-line @next/next/no-page-custom-font */}
+        <link rel="stylesheet" href={GOOGLE_FONTS_HREF} />
+      </head>
       <body>{children}</body>
     </html>
   );

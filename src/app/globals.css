@@ -5,6 +5,17 @@
   --cream: #faf7f2;
   --charcoal: #1e1d1b;
   --overlay-opacity: 0.44;
+  --font-sacramento: 'Sacramento';
+  --font-ptserif: 'PT Serif';
+  --font-blinker: 'Blinker';
+  --font-montserrat: 'Montserrat';
+  --font-cormorant: 'Cormorant Garamond';
+  --font-playfair: 'Playfair Display';
+  --font-cinzel: 'Cinzel';
+  --font-amiri: 'Amiri';
+  --font-notonaskh: 'Noto Naskh Arabic';
+  --font-arefruqaa: 'Aref Ruqaa';
+  --font-cairo: 'Cairo';
   --font-script: var(--font-sacramento);
   --font-en-serif: var(--font-ptserif);
   --font-ar-serif: var(--font-amiri);
